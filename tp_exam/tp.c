@@ -50,17 +50,13 @@ void tp() {
 
 	/*****  Creation de la GDT *****/ 
 
-
-	//Creation de notre GDT
+	//Creation de notre GDT//
 	
 	seg_desc_t my_gdt[7];
 
     my_gdt[0].raw = 0ULL;
 
-	
-
-
-
+    //GDT[]
 
 	// Variable qui contient addr et taille de la GDT
     gdt_reg_t gdtr_value;
