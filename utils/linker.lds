@@ -68,7 +68,7 @@ SECTIONS
    __shared_end__ = .;
 
 
-   /* 2 piles noyau de 4KB dans le meme bloc de 4 MB (meme entree PDE) */
+   /* 2 piles noyau de 4KB dans le meme bloc de 4 MB (meme entree PDE) + la pile noyeau ring 0 */
    
    . = 0x00c00000;
    __kernel_stack_user1_base__ = .;
@@ -79,5 +79,10 @@ SECTIONS
    __kernel_stack_user2_base__ = .;
    .kernel_stack_user2 (NOLOAD) : { KEEP(*(.kernel_stack_user2)) } : phsetup
    __kernel_stack_user2_end__ = .;
+
+   . = 0x00c02000;
+   __kernel_stack_base__ = .;
+   .kernel_stack_user2 (NOLOAD) : { KEEP(*(.kernel_stack_user2)) } : phsetup
+   __kernel_stack_end__ = .;
 
 }

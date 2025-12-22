@@ -3,14 +3,27 @@
 #include <segmem.h>
 #include <grub_mbi.h>
 #include <info.h>
+#include <cr.h>
+#include <pagemem.h>
 
 extern info_t   *info;
 
+// Les codes users et noyeau
 extern uint32_t __kernel_start__, __kernel_end__;
 extern uint32_t __user_start__, __user_end__;
+
+// Les piles ring3 user 1 et user 2
 extern uint32_t __user1_stack_base__, __user1_stack_end__;
 extern uint32_t __user2_stack_base__, __user2_stack_end__;
+
+// La zone partagee
 extern uint32_t __shared_base__, __shared_end__;
+
+// Les piles ring0 user 1, user 2 et noyeau
+extern uint32_t __kernel_stack_user1_base__, __kernel_stack_user1_end__;
+extern uint32_t __kernel_stack_user2_base__, __kernel_stack_user2_end__;
+extern uint32_t __kernel_stack_base__, __kernel_stack_end__;
+
 
 #define __user__ __attribute__((section(".user")))
 
@@ -18,18 +31,34 @@ extern uint32_t __shared_base__, __shared_end__;
 
 #define USER_STACK_SIZE 0x1000 // Piles utilisateurs de 4KB
 
+tss_t TSS;
+
+typedef struct {
+  uint32_t kernel_base;
+  uint32_t kernel_esp;
+  uint32_t cr3;
+} task_t;
+
+task_t task_user1,task_user2;
+
 // Tache user 1
 void __user__ user1() {
+
+    printf("Je suis user 1\n");
+
     while(1){
-        printf("Je suis user 1\n");
+        
     }	
 	//asm volatile ("mov %eax, %cr0");
 }
 
 // Tache user 2
 void __user__ user2() {
+
+    printf("Je suis user 2\n");
+
     while(1){
-        printf("Je suis user 2\n");
+        
     }
 	//asm volatile ("mov %eax, %cr0");
 }
@@ -86,10 +115,8 @@ char* inttypetochar(int t) {
 void tp() {
 
 	/*****  Creation de la GDT *****/ 
-
-	//Creation de notre GDT//
 	
-	seg_desc_t my_gdt[9];
+	seg_desc_t my_gdt[11];
 
     my_gdt[0].raw = 0ULL;
 
@@ -213,6 +240,21 @@ void tp() {
     my_gdt[8].g = 1;
     my_gdt[8].base_3 = 0x00;
 
+    // Pile noyeau ring 0
+    my_gdt[9].limit_1 = 0xFFFF;
+    my_gdt[9].base_1 = 0x0000;
+    my_gdt[9].base_2 = 0x00;
+    my_gdt[9].type = 3;
+    my_gdt[9].s = 1;
+    my_gdt[9].dpl = 0;
+    my_gdt[9].p = 1;
+    my_gdt[9].limit_2 = 0xF;
+    my_gdt[9].avl = 1;
+    my_gdt[9].l = 0;
+    my_gdt[9].d = 1;
+    my_gdt[9].g = 1;
+    my_gdt[9].base_3 = 0x00;
+
     // Mise a jour de la GDTR
     gdt_reg_t gdtr_of_my_gdt;
     gdtr_of_my_gdt.addr = (long unsigned int) my_gdt;
@@ -280,11 +322,165 @@ void tp() {
     static uint8_t kernel_stack_user1[4096];
     debug("kernel_stack_user1 base=%p size=0x%x top(ESP init)=%p\n", kernel_stack_user1, (unsigned)USER_STACK_SIZE, kernel_stack_user1 + USER_STACK_SIZE);
 
-
     // Declaration de la pile noyeau user 2
     __attribute__((section(".kernel_stack_user2"), aligned(4096)))
     static uint8_t kernel_stack_user2[4096];
     debug("kernel_stack_user2 base=%p size=0x%x top(ESP init)=%p\n", kernel_stack_user2, (unsigned)USER_STACK_SIZE, kernel_stack_user2 + USER_STACK_SIZE);
 
+    /*****  Creation de la TSS *****/
+    memset(&TSS, 0, sizeof(TSS));
+
+   // Si le CPU rentres en ring 0, il utilisera cette pile -> Changera a chaque changement de tache
+   TSS.s0.esp = get_ebp();            // haut de la pile kernel (ring 0)
+   TSS.s0.ss  = gdt_krn_seg_sel(9);   // segment data ring 0
+
+   // Construction du descripteur TSS dans la GDT à l'indice 10
+   {
+    uint32_t base  = (uint32_t)&TSS;
+    uint32_t limit = sizeof(TSS) - 1;
+
+    my_gdt[10].limit_1 = limit & 0xFFFF;
+    my_gdt[10].base_1  = base & 0xFFFF;
+    my_gdt[10].base_2  = (base >> 16) & 0xFF;
+    my_gdt[10].type    = 0x9;
+    my_gdt[10].s       = 0;
+    my_gdt[10].dpl     = 0;
+    my_gdt[10].p       = 1;
+    my_gdt[10].limit_2 = (limit >> 16) & 0xF;
+    my_gdt[10].avl     = 0;
+    my_gdt[10].l       = 0;
+    my_gdt[10].d       = 0;
+    my_gdt[10].g       = 0;
+    my_gdt[10].base_3  = (base >> 24) & 0xFF;
+   }
+
+   set_tr(gdt_krn_seg_sel(10)); // On met l'entree TSS de la GDT dans le registre TR
+
+
+   /*********  Configuration de la pagination  *********/
+
+    /* ---- PGD de user 1 ----*/
+    pde32_t* pgd_user1 = (pde32_t*) 0x610000;
+	
+    task_user1.cr3 = (uint32_t) pgd_user1;
+   
+    // Creation d'une PTB
+	pte32_t* ptb_0_user1 = (pte32_t*) 0x611000;
+
+    // Mise a 0 de toutes les entrees de la PGD
+	memset((void*)pgd_user1, 0, PAGE_SIZE);
+
+    // Configuration de l'identity mapping pour la pile user 1 ring 3 (1 page 4KB)
     
+
+    // Configuration de l'identity mapping pour codes users
+
+
+
+    // Configuration du mapping pour la zone partagee
+
+    // Creation d'une PTB
+	pte32_t* ptb_704_user1 = (pte32_t*) 0x61?000;
+
+    pgd_user1[704].p = 1;
+	pgd_user1[704].rw = 1;
+	pgd_user1[704].lvl = 3; // table de page accessible en ring 3
+	pgd_user1[704].pwt = 0;
+	pgd_user1[704].pcd = 0;
+	pgd_user1[704].acc = 0;
+	pgd_user1[704].mbz = 0;
+	pgd_user1[704].avl = 0;
+	pgd_user1[704].addr = page_get_nr(ptb_704_user1);
+
+    ptb_704_user1[0].p = 1;
+	ptb_704_user1[0].rw = 1;
+	ptb_704_user1[0].lvl = 3; // Page accessible en ring 3
+	ptb_704_user1[0].pwt = 0;
+	ptb_704_user1[0].pcd = 0;
+	ptb_704_user1[0].acc = 0;
+	ptb_704_user1[0].d = 0;
+	ptb_704_user1[0].pat = 0;
+	ptb_704_user1[0].g = 0; // Page non globale (elle disparait au flush de la TLB)
+	ptb_704_user1[0].avl = 0;
+	ptb_704_user1[0].addr = page_get_nr(0x802000); // Adresse de la page physique 
+
+
+    /* ---- PGD de user 2 ----*/
+    pde32_t* pgd_user2 = (pde32_t*) 0x620000;
+	
+    task_user1.cr3 = (uint32_t) pgd_user2;
+   
+    // Creation d'une PTB
+	pte32_t* ptb_0_user2 = (pte32_t*) 0x621000;
+
+    // Mise a 0 de toutes les entrees de la PGD
+	memset((void*)pgd_user2, 0, PAGE_SIZE);
+
+    // Configuration de l'identity mapping pour la pile user 1 ring 3
+
+    // Configuration de l'identity mapping pour codes users
+   
+
+
+    // Configuration du mapping pour la zone partagee
+
+    // Creation d'une PTB
+	pte32_t* ptb_2_user2 = (pte32_t*) 0x622000;
+
+    pgd_user2[2].p = 1;
+	pgd_user2[2].rw = 1;
+	pgd_user2[2].lvl = 3; // table de page accessible en ring 3
+	pgd_user2[2].pwt = 0;
+	pgd_user2[2].pcd = 0;
+	pgd_user2[2].acc = 0;
+	pgd_user2[2].mbz = 0;
+	pgd_user2[2].avl = 0;
+	pgd_user2[2].addr = page_get_nr(ptb_2_user2);
+
+    ptb_2_user2[724].p = 1;
+	ptb_2_user2[724].rw = 1;
+	ptb_2_user2[724].lvl = 3; // Page accessible en ring 3
+	ptb_2_user2[724].pwt = 0;
+	ptb_2_user2[724].pcd = 0;
+	ptb_2_user2[724].acc = 0;
+	ptb_2_user2[724].d = 0;
+	ptb_2_user2[724].pat = 0;
+	ptb_2_user2[724].g = 0; // Page non globale (elle disparait au flush de la TLB)
+	ptb_2_user2[724].avl = 0;
+	ptb_2_user2[724].addr = page_get_nr(0x802000); // Adresse de la page physique 
+
+
+    /* ---- PGD du noyeau ----*/
+    pde32_t* pgd_kernel = (pde32_t*) 0x600000;
+	
+    task_user1.cr3 = (uint32_t) pgd_kernel;
+   
+    // Creation d'une PTB
+	pte32_t* ptb_0_kernel = (pte32_t*) 0x601000;
+
+    // Mise a 0 de toutes les entrees de la PGD
+	memset((void*)pgd_kernel, 0, PAGE_SIZE);
+
+    // Configuration de l'identity mapping pour la pile user 1 ring 3
+
+    // Configuration de l'identity mapping pour codes users
+
+    // Configuration du mapping pour la zone partagee
+
+    // Creation d'une PTB
+	pte32_t* ptb_2_kernel = (pte32_t*) 0x601000;
+
+
+
+    // Activer Pagination
+    set_cr3((uint32_t)pgd_noyeau);
+    uint32_t cr0 = get_cr0();
+    set_cr0(cr0 | (1u << 31)); // PG=1
+
+    // Autre / suite
+
+    // changer la pile noyeau de la TSS pour la pile noyeau user 1
+    TSS.s0.esp = __kernel_stack_user1_end__; // adresse 0x00c0 1000
+    TSS.s0.ss  = gdt_krn_seg_sel(2);
+
 }

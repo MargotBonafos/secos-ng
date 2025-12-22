@@ -2,6 +2,17 @@
 #include <intr.h>
 #include <debug.h>
 #include <info.h>
+#include <segmem.h>
+#include <grub_mbi.h>
+
+extern uint32_t __kernel_stack_user1_base__, __kernel_stack_user1_end__;
+extern uint32_t __kernel_stack_user2_base__, __kernel_stack_user2_end__;
+
+uint32_t k1_base = (uint32_t)&__kernel_stack_user1_base__;
+uint32_t k1_end  = (uint32_t)&__kernel_stack_user1_end__;
+
+uint32_t k2_base = (uint32_t)&__kernel_stack_user2_base__;
+uint32_t k2_end  = (uint32_t)&__kernel_stack_user2_end__;
 
 extern info_t *info;
 extern void idt_trampoline();
@@ -26,6 +37,7 @@ void intr_init()
 
 void __regparm__(1) intr_hdlr(int_ctx_t *ctx)
 {
+
    debug("\nIDT event\n"
          " . int    #%d\n"
          " . error  0x%x\n"
@@ -55,6 +67,44 @@ void __regparm__(1) intr_hdlr(int_ctx_t *ctx)
          ,ctx->gpr.edi.raw);
 
    uint8_t vector = ctx->nr.blow;
+
+   // cpl au moment de l'interruption
+   uint32_t cpl = ctx->cs.raw & 3;
+
+   // esp de la pile noyeau courant
+   uint32_t kernel_esp = (uint32_t)ctx;
+
+   if(ctx->nr.raw == 32){
+
+      debug("interruption 32 \n");
+
+      if(cpl == 3){
+         debug("l'interruption a ete declanchee par un user");
+
+         if (kernel_esp >= k1_base && kernel_esp < k1_end) {
+            debug("IRQ sur pile noyau USER1 (kesp=0x%x)\n", kernel_esp);
+            debug("User 1 etait en cours au moment de l'interruption irq0\n");
+            // On switch de tache au retour de l'interruption
+            
+
+         } 
+         else if (kernel_esp >= k2_base && kernel_esp < k2_end) {
+            debug("IRQ sur pile noyau USER2 (kesp=0x%x)\n", kernel_esp);
+            debug("User 2 etait en cours au moment de l'interruption irq0\n");
+            // On switch de tache au retour de l'interruption
+
+         } 
+         else {
+            debug("IRQ sur pile noyau inconnue (kesp=0x%x)\n", kernel_esp);
+            debug("Erreur lors de la recuperation du user en cours au moment de l'irq0");
+         }
+
+      }else{
+         debug("l'interruption a ete declanchee par le noyeau");
+      }
+   }else{
+      debug("l'interruption declanchee n'est pas l'interruption 32\n");
+   }
 
    if(vector < NR_EXCP)
       excp_hdlr(ctx);
