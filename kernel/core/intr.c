@@ -5,6 +5,8 @@
 #include <segmem.h>
 #include <grub_mbi.h>
 
+#include <task.h>
+
 extern uint32_t __kernel_stack_user1_base__, __kernel_stack_user1_end__;
 extern uint32_t __kernel_stack_user2_base__, __kernel_stack_user2_end__;
 
@@ -29,6 +31,10 @@ void intr_init()
    /* re-use default grub GDT code descriptor */
    for(i=0 ; i<IDT_NR_DESC ; i++, isr += IDT_ISR_ALGN)
       build_int_desc(&IDT[i], gdt_krn_seg_sel(1), isr);
+
+   // syscall : les users en ring3 doivent pouvoir faire int 0x80
+   IDT[0x80].dpl = 3;
+   IDT[0x80].p  = 1;
 
    idtr.desc  = IDT;
    idtr.limit = sizeof(IDT) - 1;
@@ -71,7 +77,7 @@ void __regparm__(1) intr_hdlr(int_ctx_t *ctx)
    // cpl au moment de l'interruption
    uint32_t cpl = ctx->cs.raw & 3;
 
-   // esp de la pile noyeau courant
+   // esp de la pile noyau courant
    uint32_t kernel_esp = (uint32_t)ctx;
 
    if(ctx->nr.raw == 32){
@@ -81,17 +87,26 @@ void __regparm__(1) intr_hdlr(int_ctx_t *ctx)
       if(cpl == 3){
          debug("l'interruption a ete declanchee par un user");
 
-         if (kernel_esp >= k1_base && kernel_esp < k1_end) {
+         if (current_task == &task_user1) {
             debug("IRQ sur pile noyau USER1 (kesp=0x%x)\n", kernel_esp);
             debug("User 1 etait en cours au moment de l'interruption irq0\n");
-            // On switch de tache au retour de l'interruption
             
+            // On sauvegarde le pointeur de pile kernel de user 1 dans sa struct
+            task_user1.kernel_esp = (uint32_t)ctx;
 
+            // On switch de tache au retour de l'interruption
+            task_t *next = (current_task == &task_user1) ? &task_user2 : &task_user1;
+            
          } 
-         else if (kernel_esp >= k2_base && kernel_esp < k2_end) {
+         else if (current_task == &task_user2) {
             debug("IRQ sur pile noyau USER2 (kesp=0x%x)\n", kernel_esp);
             debug("User 2 etait en cours au moment de l'interruption irq0\n");
+
+            // On sauvegarde le pointeur de pile kernel de user 1 dans sa struct
+            task_user2.kernel_esp = (uint32_t)ctx;
+
             // On switch de tache au retour de l'interruption
+            
 
          } 
          else {
@@ -100,7 +115,7 @@ void __regparm__(1) intr_hdlr(int_ctx_t *ctx)
          }
 
       }else{
-         debug("l'interruption a ete declanchee par le noyeau");
+         debug("l'interruption a ete declanchee par le noyau");
       }
    }else{
       debug("l'interruption declanchee n'est pas l'interruption 32\n");

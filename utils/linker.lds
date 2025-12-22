@@ -82,7 +82,7 @@ SECTIONS
 
    . = 0x00c02000;
    __kernel_stack_base__ = .;
-   .kernel_stack_user2 (NOLOAD) : { KEEP(*(.kernel_stack_user2)) } : phsetup
+   .kernel_stack (NOLOAD) : { KEEP(*(.kernel_stack)) } : phsetup
    __kernel_stack_end__ = .;
 
 }

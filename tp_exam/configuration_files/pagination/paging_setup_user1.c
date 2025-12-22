@@ -4,6 +4,7 @@
 #include <pagemem.h>
 #include <string.h>
 #include <stdint.h>
+#include "paging_setup.h"
 
 extern uint32_t __kernel_start__, __kernel_end__;
 extern uint32_t __user_start__,   __user_end__;
