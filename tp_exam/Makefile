@@ -2,5 +2,6 @@
 
 include ../utils/config.mk
 objects += tp.o
+objects += int32_stub.o
 include ../utils/rules.mk
 #-include $(dependencies)

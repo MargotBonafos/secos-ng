@@ -8,7 +8,7 @@
 #include <intr.h>
 #include <pic.h>
 
-
+//------------------------------------------------------------- MEMOIRE -------------------------------------------------------------
 extern info_t   *info;
 extern uint32_t __kernel_start__;
 extern uint32_t __kernel_end__;
@@ -29,25 +29,6 @@ char* inttypetochar(int t) {
    }
 }
 
-void pic_enable_irq(uint8_t irq)
-{
-    pic_ocw1_t ocw1;
-    uint16_t port;
-
-    if (irq < 8) {
-        port = PIC_IMR(PIC1);
-    } else {
-        port = PIC_IMR(PIC2);
-        irq -= 8;
-    }
-
-    ocw1.raw = in(port);
-    ocw1.raw &= ~(1 << irq);   // démasque IRQ
-    out(ocw1.raw, port);
-}
-
-
-
 void print_mem(){
    debug("kernel mem [0x%p - 0x%p]\n", &__kernel_start__, &__kernel_end__);
    debug("MBI flags 0x%x\n", info->mbi->flags);
@@ -62,6 +43,14 @@ void print_mem(){
         entry++;
    }
 }
+
+
+
+
+//------------------------------------------------------------- SEGMENTATION -------------------------------------------------------------
+
+
+
 
 void print_gdt_content(gdt_reg_t gdtr_ptr) {
     seg_desc_t* gdt_ptr;
@@ -150,6 +139,7 @@ tss_t      TSS;
 #define d3_t2_dsc(_d)  gdt_flat_dsc(_d,3,SEG_DESC_DATA_RW)
 #define d3_dsc(_d)  gdt_flat_dsc(_d,3,SEG_DESC_DATA_RW)
 
+//Initialisation gdt
 void init_gdt() {
    gdt_reg_t gdtr;
 
@@ -175,6 +165,72 @@ void init_gdt() {
    print_gdt_content(gdtr);
 }
 
+
+
+//------------------------------------------------------------- PAGINATION -------------------------------------------------------------
+
+#define ADR_PILE_KNL_T1 0x301000
+#define ADR_PILE_USR_T1 0x301000
+#define ADR_PILE_KNL_T2 0x301000
+#define ADR_PILE_USR_T2 0x301000
+#define ADR_MEM_PARTAGE 0x301000
+#define ADR_PILE_KNL 0x301000
+
+void init_pagin(){
+   //Pagination Tâche 1
+   //Initialisation
+   pde32_t * PGD_t1 = (pde32_t * )0x300000;
+   pte32_t * PDT_t1_1 = (pte32_t * )0x301000;
+   pte32_t * PDT_t1_2 = (pte32_t * )0x302000;
+   memset((void*)PGD_t1, 0, 4096);
+   memset(PDT_t1_1, 0, 4096);
+   memset(PDT_t1_2, 0, 4096);
+   //Première entrée PGD_t1 => PDT_t1_1 => Noyau
+   pg_set_entry(&PGD_t1[0], PG_KRN|PG_RW, page_get_nr(PDT_t1_1));
+   pg_set_entry(&PDT_t1_1[0], PG_KRN|PG_RW, page_get_nr(ADR_PILE_KNL_T1)); //Pile noyau
+   //Deuxième entrée PGD_t1 => PDT_t1_2 => User
+   pg_set_entry(&PGD_t1[1], PG_USR|PG_RW, page_get_nr(PDT_t1_2));
+   pg_set_entry(&PDT_t1_2[0], PG_USR|PG_RW, page_get_nr(ADR_PILE_USR_T1)); //Pile user
+   pg_set_entry(&PDT_t1_2[1], PG_USR|PG_RW, page_get_nr(ADR_MEM_PARTAGE)); //Mémoire partagée
+
+
+   //Pagination Tâche 2
+   //Initialisation
+   pde32_t * PGD_t2 = (pde32_t * )0x400000;
+   pte32_t * PDT_t2_1 = (pte32_t * )0x401000;
+   pte32_t * PDT_t2_2 = (pte32_t * )0x402000;
+   memset((void*)PGD_t2, 0, 4096);
+   memset(PDT_t2_1, 0, 4096);
+   memset(PDT_t2_2, 0, 4096);
+   //Première entrée PGD_t2 => PDT_t2_1 => Noyau
+   pg_set_entry(&PGD_t2[0], PG_KRN|PG_RW, page_get_nr(PDT_t2_1));
+   pg_set_entry(&PDT_t2_1[0], PG_KRN|PG_RW, page_get_nr(ADR_PILE_KNL_T2)); //Pile noyau
+   //Deuxième entrée PGD_t2 => PDT_t2_2 => User
+   pg_set_entry(&PGD_t2[1], PG_USR|PG_RW, page_get_nr(PDT_t2_2));
+   pg_set_entry(&PDT_t2_2[0], PG_USR|PG_RW, page_get_nr(ADR_PILE_USR_T2)); //Pile user
+   pg_set_entry(&PDT_t2_2[2], PG_USR|PG_RW, page_get_nr(ADR_MEM_PARTAGE)); //Mémoire partagée (entrée 2 pour adr virtuelle différente de t1)
+
+
+   //Pagination Noyau
+   //Initialisation
+   pde32_t * PGD_kn = (pde32_t * )0x500000;
+   pte32_t * PDT_kn = (pte32_t * )0x501000;
+   memset((void*)PGD_kn, 0, 4096);
+   memset(PDT_kn, 0, 4096);
+   //Première entrée PGD_kn => PDT_kn => Noyau
+   pg_set_entry(&PGD_kn[0], PG_KRN|PG_RW, page_get_nr(PDT_kn));
+   pg_set_entry(&PDT_kn[0], PG_KRN|PG_RW, page_get_nr(ADR_PILE_KNL));
+}
+
+
+
+
+
+//------------------------------------------------------------- INTERRUPTIONS -------------------------------------------------------------
+
+
+
+//Initialisation IDT
 idt_reg_t init_idt(){
 	idt_reg_t ptr_idtr;
    get_idtr(ptr_idtr);
@@ -182,30 +238,95 @@ idt_reg_t init_idt(){
    return ptr_idtr;
 }
 
+void pic_enable_irq(uint8_t irq)
+{
+    pic_ocw1_t ocw1;
+    uint16_t port;
+
+    if (irq < 8) {
+        port = PIC_IMR(PIC1);
+    } else {
+        port = PIC_IMR(PIC2);
+        irq -= 8;
+    }
+
+    ocw1.raw = in(port);
+    ocw1.raw &= ~(1 << irq);   // démasque IRQ
+    out(ocw1.raw, port);
+}
+
+
+//Structure task pour identifier les piles
 typedef struct task{
    uint32_t esp;
-} task_t
+} task_t ;
+static task_t task1,task2;
+static task_t *current_task;
 
-task_t task1,task2;
 
+//Fonction du switch de pile post irq0
 uint32_t int32_handler(uint32_t esp) {
    debug("j'entre dans le int32 handler \n");
-   //ici je fais mon switch de esp
-   uint32_t esp_courant;
-   if (esp == &task1->esp){
-      esp_courant = &task2->esp;
+
+   current_task->esp = esp;
+
+   if (current_task == &task1){
+      current_task = &task2;
    }
-   else esp_courant = &task1->esp;
+   else current_task = &task1;
+
    debug("je sors du int32 handler \n");
-   return esp_courant;
+
+   pic_eoi(PIC1); //Permet d'envoyer un End Of Interrupt au CPU pour que irq0 puisse se redéclencher
+
+   return current_task->esp;
+}
+
+//Import du handler int32 en assembleur
+extern void int32_stub(void);
+
+//Handler int80
+void syscall_isr() {
+   asm volatile (
+      "leave ; pusha        \n"
+      "mov %esp, %eax      \n"
+      "call syscall_handler \n"
+      "popa ; iret"
+      );
+}
+
+void __regparm__(1) syscall_handler(int_ctx_t *ctx) {
+   debug("SYSCALL eax = %p\n", (void *) ctx->gpr.eax.raw);
+   debug("print syscall: %s", (char *)ctx->gpr.esi.raw);
+}
+
+
+//Compteur
+void sys_counter(uint32_t *counter);
+
+//Tâches 1 et 2
+void user1(){
+   while(1){
+      debug("... I am User 1 ...\n");
+      //TODO : Ecrire compteur
+   }
+}
+void user2(){
+   while(1){
+      debug("... I am User 2 ...\n");
+      //TODO : Lire compteur
+      //asm volatile ("int $80");
+   }
 }
 
 
 
 
-void int32_trigger(){
-   asm volatile ("int $32");
-}
+//------------------------------------------------------------- MAIN -------------------------------------------------------------
+
+
+
+
 void tp() {
 	
 	//Affichage de la mémoire 
@@ -217,14 +338,46 @@ void tp() {
    //Initialisation IDT
 	idt_reg_t ptr_idtr = init_idt();
 
+   //Affichage cr3
+	uint32_t cr3 = get_cr3();
+	debug("cr3 : %x\n", cr3);
+
+   //Initialisation pagination
+   init_pagin();
+
+   // Activation pagination
+   //set_cr3(PGD);
+	//set_cr0(CR0_PG);
+
    //Changer addresse du handler de int32
-	int_desc_t * desc = &(ptr_idtr.desc[32]);
-	desc->offset_1 = (uint32_t)int32_handler;
-	desc->offset_2 = ((uint32_t)int32_handler)>>16;
-   //peut-être ajouter aussi le dpl, le selecteur de sgment...?
-   //chat me dit de ne pas faire pointer vers mon int_handler mais vers un int_stub
-   //le stub contiendrais le  pushad, call int_handler, popad, cli...
-   /*
+	int_desc_t * desc32 = &(ptr_idtr.desc[32]);
+	desc32->offset_1 = (uint32_t)int32_stub;
+	desc32->offset_2 = ((uint32_t)int32_stub)>>16;
+   desc32->dpl = 0;
+   desc32->p=1;
+   desc32->selector = c0_sel;
+  
+   //Activation de irq0
+   pic_enable_irq(PIC_TIMER_IRQ); // IRQ0
+
+   // Changer addresse du handler de int80
+	int_desc_t * desc = &(ptr_idtr.desc[80]);
+	desc->offset_1 = (uint32_t)syscall_isr;
+	desc->offset_2 = ((uint32_t)syscall_isr)>>16;
+   desc->dpl = 3;
+
+
+
+}
+
+/*
+TODO
+- Bien construire les tâches et leur piles avec le contexte empilé pour préparer le 1er dépilement post irq0
+*/
+
+
+ /*
+ EXPLICATIONS INTERRUPTION irq0
    Quand irq0 se déclenche: 
    - cpu sauvegarde eip, cs, eflags (ss/esp si changement de ring)
    - saute dans mon stub assembleur
@@ -238,18 +391,4 @@ void tp() {
 
    à la définition de mes tâches, il faut construire leur piles avec le bon contexte empilé 
    sinon il y aura forcément un problème au 1er switch
-   */
-
-   pic_enable_irq(PIC_TIMER_IRQ); // IRQ0
-
-   //Déclenchement de int 32 pour tester
-   //int32_trigger();
-}
-
-/*
-TODO
-- Trouver comment doit être écrit le stub asm (fonction, fichier...) 
-- Trouver comment l'appeler (le référencer dans l'idt en fait je crois)
-- Ecrire le stub asm
-- Est-ce qu'on peut pas tout mettre dans mon int_handler?
 */
