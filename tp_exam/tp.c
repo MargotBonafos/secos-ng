@@ -55,8 +55,8 @@ void __user__ user1() {
 
     while (1){
 
-        // Petit delais afin de voir l'incrementation de 1 en 1 dans les affichages de user 2
-        for (volatile int i=0; i<2000000; i++){
+        // Petit delai afin de voir l'incrementation de 1 en 1 dans les affichages de user 2
+        for (volatile int i=0; i<4000000; i++){
             asm volatile("nop");
         }
 
@@ -275,6 +275,9 @@ void tp() {
 
     // Mise a 0 du compteur
     *(volatile uint32_t*)VADDR_COUNTER_USER1 = 0;
+
+    // Affichage uniquement du compteur a partir d'ici
+    debug("--- Affichage du compteur ---\n\n");
 
     // Mise de IF a 1 pour reactiver irq0 (equivalent a sti())
     uint32_t eflags;
