@@ -285,37 +285,48 @@ uint32_t int32_handler(uint32_t esp) {
 //Import du handler int32 en assembleur
 extern void int32_stub(void);
 
+
+
+//------------------------------------------------------------- SYSCALL -------------------------------------------------------------
+
+
+
+
+/* Page partagee de 0x00802000 MB a 0x00802FFF */
+#define ADR_COMPTEUR 0x00802000
+
 //Handler int80
-void syscall_isr() {
-   asm volatile (
-      "leave ; pusha        \n"
-      "mov %esp, %eax      \n"
-      "call syscall_handler \n"
-      "popa ; iret"
-      );
+void syscall_isr(uint32_t *user_ptr) {
+   uint32_t value;
+   value = *user_ptr;
+   debug("Valeur compteur = %d\n", value);
 }
-
-void __regparm__(1) syscall_handler(int_ctx_t *ctx) {
-   debug("SYSCALL eax = %p\n", (void *) ctx->gpr.eax.raw);
-   debug("print syscall: %s", (char *)ctx->gpr.esi.raw);
-}
-
 
 //Compteur
-void sys_counter(uint32_t *counter);
+void sys_counter(uint32_t *counter){
+   //Mettre adr de counter dans eax
+   asm volatile(
+      "mov %0, %%eax \n"
+      "int $80"
+      : 
+      : "r"(counter)
+      : "eax"
+   );
+}
 
 //Tâches 1 et 2
 void user1(){
    while(1){
       debug("... I am User 1 ...\n");
-      //TODO : Ecrire compteur
+      uint32_t *counter = (uint32_t *)ADR_COMPTEUR;      
+      (*counter)++;
    }
 }
 void user2(){
    while(1){
       debug("... I am User 2 ...\n");
-      //TODO : Lire compteur
-      //asm volatile ("int $80");
+      uint32_t *counter = (uint32_t *)ADR_COMPTEUR; 
+      sys_counter(counter);
    }
 }
 
