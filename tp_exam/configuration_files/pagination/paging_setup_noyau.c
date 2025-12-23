@@ -60,8 +60,9 @@ void paging_setup_kernel(void)
     pg_set_entry(&pgd_kernel[3], PG_KRN | PG_RW, page_get_nr(ptb3_kernel));
 
     // Affichage pour verif
-    debug("[paging] kernel PGD=%p PTB0=%p PTB1=%p PTB2=%p PTB3=%p\n",
-          pgd_kernel, ptb0_kernel, ptb1_kernel, ptb2_kernel, ptb3_kernel);
+
+    /*debug("[paging] kernel PGD=%p PTB0=%p PTB1=%p PTB2=%p PTB3=%p\n",
+          pgd_kernel, ptb0_kernel, ptb1_kernel, ptb2_kernel, ptb3_kernel);*/
 
     // Charger CR3
     set_cr3((uint32_t)pgd_kernel);

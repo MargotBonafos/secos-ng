@@ -13,6 +13,8 @@
 #include <configuration_files/segmentation/segmentation_setup.h>
 #include <configuration_files/tss/tss_setup.h>
 #include <configuration_files/interruption/interruption_setup.h>
+#include <configuration_files/syscall/syscall.h>
+
 #include <task.h>
 
 extern info_t   *info;
@@ -47,30 +49,28 @@ task_t *current_task = 0;
 // Tache user 1
 void __user__ user1() {
 
-    /*
-    printf("[U1] start\n");
-    while (1) {
-        for (volatile int i = 0; i < 10000000; i++);
-        printf("[U1]\n");
-    }
-    */
-    while(1){
-        asm volatile("nop");
+    volatile uint32_t *counter = (volatile uint32_t*)VADDR_COUNTER_USER1; // expose par syscall.h
+
+    while (1){
+        (*counter)++;
     }
 }
 
 // Tache user 2
 void __user__ user2() {
 
-    /*
-    printf("[U2] start\n");
-    while (1) {
-        for (volatile int i = 0; i < 10000000; i++);
-        printf("[U2]\n");
-    }
-    */
-    while(1){
-        asm volatile("nop");
+    volatile uint32_t *counter = (volatile uint32_t*)VADDR_COUNTER_USER2; // expose par syscall.h
+
+    while (1){
+        
+        // Appel systeme pour l'affichage de la valeur du compteur par ring 0
+        asm volatile(
+        "movl %0, %%eax \n\t"
+        "int $0x80      \n\t"
+        :
+        : "r"(counter)
+        : "eax", "memory"
+        );
     }
 }
 
@@ -150,8 +150,14 @@ void tp() {
 
     // Activer Pagination
     uint32_t cr0 = get_cr0();
-    set_cr0(cr0 | (1u << 31)); 
+    set_cr0(cr0 | (1u << 31));
+    
+    // Mise a jour des CR3 des struct des tasks
+    task_user1.cr3 = get_user1_pgd_addr();
+    task_user2.cr3 = get_user2_pgd_addr();
 
+    debug("pgd_user1=%d pgd_user2=%d task1.cr3=0x%x task2.cr3=0x%x\n",
+      get_user1_pgd_addr(), get_user2_pgd_addr(), task_user1.cr3, task_user2.cr3);
     
     /* ---------------  Configuration des interruptions ------------------- */
     

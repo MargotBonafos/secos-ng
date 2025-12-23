@@ -8,6 +8,7 @@
 
 #include <../../tp_exam/task.h>
 #include <../../tp_exam/configuration_files/tss/tss_setup.h>
+#include <../../tp_exam/configuration_files/syscall/syscall.h>
 
 extern uint32_t __kernel_stack_user1_base__, __kernel_stack_user1_end__;
 extern uint32_t __kernel_stack_user2_base__, __kernel_stack_user2_end__;
@@ -82,10 +83,12 @@ uint32_t __regparm__(1) intr_hdlr(int_ctx_t *ctx)
    return (uint32_t)ctx;
    }
 
-   /* Syscall 80 */
+   // Syscall 80 -> Appel du handler dans tp.c
    if (vector == 0x80) {
-      // TODO: syscall_hdlr(ctx); (tu l’ajouteras)
-      return (uint32_t)ctx;
+      syscall_hdlr(ctx);
+
+      // Retour ici de syscall.c/syscall_hdlr
+      return (uint32_t)ctx; // On ne change pas de user (pas de switch de contexte ici) car ce n'est pas irq0
    }
 
    // Gestion de irq0
@@ -114,11 +117,15 @@ uint32_t __regparm__(1) intr_hdlr(int_ctx_t *ctx)
             current_task = &task_user2;
 
             // Switch CR3
-            set_cr3(&task_user2.cr3);
+            set_cr3(task_user2.cr3);
 
             // Mise a jour TSS avec bonne pile kernel pour la prochaine interruption
-            TSS.s0.esp = __kernel_stack_user2_end__; // adresse 0x00c0 2000
+            TSS.s0.esp = (uint32_t)&__kernel_stack_user2_end__; // adresse 0x00c0 2000
             TSS.s0.ss  = gdt_krn_seg_sel(3);
+
+            // Debug pour verif
+            debug("SWITCH u1->u2: u2.kesp=0x%x u2.cr3=0x%x TSS.esp0=0x%x\n",
+            task_user2.kernel_esp, task_user2.cr3, TSS.s0.esp);
 
             //On envoit le nouveau esp pile user 2 a idt.s
             return task_user2.kernel_esp;
@@ -137,10 +144,10 @@ uint32_t __regparm__(1) intr_hdlr(int_ctx_t *ctx)
             current_task = &task_user1;
 
             // Switch CR3
-            set_cr3(&task_user1.cr3);
+            set_cr3(task_user1.cr3);
 
             // Mise a jour TSS avec bonne pile kernel pour la prochaine interruption
-            TSS.s0.esp = __kernel_stack_user1_end__; // adresse 0x00c0 2000
+            TSS.s0.esp = (uint32_t)&__kernel_stack_user1_end__; // adresse 0x00c0 2000
             TSS.s0.ss  = gdt_krn_seg_sel(2);
 
             //On envoit le nouveau esp pile user 1 a idt.s

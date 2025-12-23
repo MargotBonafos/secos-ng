@@ -40,10 +40,10 @@ static inline void map_page_in_ptb(pte32_t *ptb, void *va, uint32_t pa, uint32_t
     pg_set_entry(&ptb[pti], flags, page_get_nr(pa));
 }
 
+pde32_t *pgd_user2 = (pde32_t*)U2_PGD_PA;
+
 void paging_setup_user2(void)
 {
-    pde32_t *pgd_user2 = (pde32_t*)U2_PGD_PA;
-
     pte32_t *ptb0_user2   = (pte32_t*)U2_PTB0_PA;
     pte32_t *ptb1_user2   = (pte32_t*)U2_PTB1_PA;
     pte32_t *ptb2_user2   = (pte32_t*)U2_PTB2_PA;
@@ -97,5 +97,9 @@ void paging_setup_user2(void)
 
 
     /* Affichage pour verif */
-    debug("[paging] user2: PGD=%p shared_va=%p", pgd_user2,USER2_SHARED_VA);
+    //debug("[paging] user2: PGD=%p shared_va=%p", pgd_user2,USER2_SHARED_VA);
+}
+
+uint32_t get_user2_pgd_addr(void) {
+    return (uint32_t)pgd_user2;
 }

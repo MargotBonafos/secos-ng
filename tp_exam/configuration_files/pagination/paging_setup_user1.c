@@ -43,10 +43,10 @@ static inline void map_page_in_ptb(pte32_t *ptb, void *va, uint32_t pa, uint32_t
     pg_set_entry(&ptb[pti], flags, page_get_nr(pa));
 }
 
+pde32_t *pgd_user1 = (pde32_t*)U1_PGD_PA;
+
 void paging_setup_user1(void)
 {
-    pde32_t *pgd_user1 = (pde32_t*)U1_PGD_PA;
-
     pte32_t *ptb0_user1  = (pte32_t*)U1_PTB0_PA;
     pte32_t *ptb1_user1  = (pte32_t*)U1_PTB1_PA;
     pte32_t *ptb2_user1  = (pte32_t*)U1_PTB2_PA;
@@ -107,4 +107,8 @@ void paging_setup_user1(void)
     map_ptb_identity(ptb3_user1, 3072, PG_KRN | PG_RW);
     pg_set_entry(&pgd_user1[3], PG_KRN | PG_RW, page_get_nr(ptb3_user1));
 
+}
+
+uint32_t get_user1_pgd_addr(void) {
+    return (uint32_t)pgd_user1;
 }
