@@ -10,7 +10,18 @@ uint32_t syscall_hdlr(int_ctx_t *ctx)
                                           // et donc @ de compteur (cf sys_counter)
 
     uint32_t value = *(volatile uint32_t*)user_ptr;  // lecture dans la page partagee
-    debug("[syscall] compteur=%u (ptr=0x%x)\n", value, user_ptr); // affichage par ring 0 du compteur 
+    
+    static uint32_t last = 0;
+
+    // if afin de n'afficher la valeur du compteur qu'une seule fois
+    if (value != last) {
+        debug("[syscall_hdlr] --- compteur=%u --- \n", value); // affichage par ring 0 du compteur 
+        
+        // debug pour verif
+        //debug("[syscall_hdlr] - (ptr=0x%x)\n", user_ptr); 
+        
+        last = value;
+    }
 
     ctx->gpr.eax.raw = 0; // On met 0 dans eax
 

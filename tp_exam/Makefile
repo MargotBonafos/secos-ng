@@ -6,8 +6,16 @@ include ../utils/config.mk
 CFLAGS   += -I. -I./configuration_files
 CPPFLAGS += -I. -I./configuration_files
 
+# Pour que <autre/...> soit trouvable depuis tp_exam/
+CFLAGS   += -I. -I./autre
+CPPFLAGS += -I. -I./autre
+
 # tp.c + tous les .c de configuration_files/**
-tp_exam_srcs := tp.c $(shell find configuration_files -name '*.c' -type f 2>/dev/null)
+
+tp_exam_srcs := tp.c \
+  $(shell find configuration_files -name '*.c' -type f 2>/dev/null) \
+  $(shell find autre -name '*.c' -type f 2>/dev/null)
+
 objects      += $(tp_exam_srcs:.c=.o)
 
 include ../utils/rules.mk

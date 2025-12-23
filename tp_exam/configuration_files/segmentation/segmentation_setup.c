@@ -182,7 +182,9 @@ void segmentation_setup_gdt(void){
     set_gdtr(gdtr_of_my_gdt); // Update du registre GDTR
 
     // Affichage du contenu de la GDT
+    debug(" --- affichage de la GDT ---\n\n");
     print_gdt_content(gdtr_of_my_gdt);
+    debug("\n\n");
     
     //Mettre a jour les selecteurs de segments
     set_cs(gdt_krn_seg_sel(1));

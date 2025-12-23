@@ -17,6 +17,8 @@
 
 #include <task.h>
 
+#include <autre/affichage_en_tete.h>
+
 extern info_t   *info;
 
 // Les codes users et noyau
@@ -52,6 +54,12 @@ void __user__ user1() {
     volatile uint32_t *counter = (volatile uint32_t*)VADDR_COUNTER_USER1; // expose par syscall.h
 
     while (1){
+
+        // Petit delais afin de voir l'incrementation de 1 en 1 dans les affichages de user 2
+        for (volatile int i=0; i<2000000; i++){
+            asm volatile("nop");
+        }
+
         (*counter)++;
     }
 }
@@ -62,7 +70,7 @@ void __user__ user2() {
     volatile uint32_t *counter = (volatile uint32_t*)VADDR_COUNTER_USER2; // expose par syscall.h
 
     while (1){
-        
+    
         // Appel systeme pour l'affichage de la valeur du compteur par ring 0
         asm volatile(
         "movl %0, %%eax \n\t"
@@ -76,10 +84,16 @@ void __user__ user2() {
 
 void tp() {
 
+    /* ---------------  Affichage de l'en tete du projet ------------------- */
+
+    afficher_en_tete();
+
     /* ---------------  Configuration de la memoire physique ------------------- */
 
     // cf linker.lds pour comprendre l'agencement de la memoire
 
+    debug("\n\n");
+    debug("--- Affichage de l'organisation memoire physique (RAM) ---\n\n");
    // Declaration de la pile user 1
     __attribute__((section(".user1_stack"), aligned(16)))
     static uint8_t user1_stack[USER_STACK_SIZE];
@@ -110,6 +124,7 @@ void tp() {
     static uint8_t kernel_stack[4096];
     debug("kernel_stack base=%p size=0x%x top(ESP init)=%p\n", kernel_stack, (unsigned)USER_STACK_SIZE, kernel_stack + USER_STACK_SIZE);
 
+    debug("\n\n");
 
     /* ---------------  Configuration de segmentation ------------------- */
 
@@ -117,21 +132,6 @@ void tp() {
 
     // Creation de la GDT et mise a jour de GDTR et des selecteurs de segments avec code et pile noyau
 	segmentation_setup_gdt();
-
-    // Verification de l'utilisation de my_gdt
-    gdt_reg_t actual_gdtr;
-    get_gdtr(actual_gdtr);
-
-    // Affichage des valeurs gdtr_value (et donc implicitement des valeurs du registre GDTR)
-    printf("taille de la GDT : %hu \n", actual_gdtr.limit);
-    printf("addresse de la GDT : %lu  \n", actual_gdtr.addr);
-
-    // Affichage des selecteurs de segments
-    printf("CS : %hu \n", get_seg_sel(cs));
-
-    printf("DS : %hu \n", get_ds());
-    printf("SS : %hu \n", get_ss());
-
 
     /* ---------------  Configuration de la TSS ------------------- */
     
@@ -156,9 +156,12 @@ void tp() {
     task_user1.cr3 = get_user1_pgd_addr();
     task_user2.cr3 = get_user2_pgd_addr();
 
+    // debug pour verif
+    /*
     debug("pgd_user1=%d pgd_user2=%d task1.cr3=0x%x task2.cr3=0x%x\n",
       get_user1_pgd_addr(), get_user2_pgd_addr(), task_user1.cr3, task_user2.cr3);
-    
+    */
+
     /* ---------------  Configuration des interruptions ------------------- */
     
     // Cf interruption_setup.c pour voir toutes les actions de configuration
@@ -195,7 +198,7 @@ void tp() {
 
     /*** Creation d'un int_ctx_t ***/
 
-    // On recupere le esp de la pile noyeau user 2
+    // On recupere le esp de la pile noyau user 2
     uint32_t *sp = (uint32_t*)&__kernel_stack_user2_end__;
 
     // On Reserver la place de int_ctx_t sur la pile noyau
@@ -233,7 +236,7 @@ void tp() {
 
     current_task = &task_user1;
 
-    /* Mise en place du contexte de user 1 sur la pile noyeau pour qu'au moment du iret,
+    /* Mise en place du contexte de user 1 sur la pile noyau pour qu'au moment du iret,
        on passe dans le code user1 */
 
     // --- Creation du SS ring3 User 1 ---
@@ -258,48 +261,28 @@ void tp() {
 
     uint16_t cs_selecteur_ring3_user1 = (cs_ring3_user1.index << 3) | (cs_ring3_user1.ti << 2) | (cs_ring3_user1.rpl);
 
-    // --- Push du contexte ---
-
-    /*
-    // Push de SS et ESP
-    asm volatile("push %0" :: "r"((uint32_t)ss_selecteur_ring3_user1));
-    asm volatile("push %0" :: "r"(esp_ring3_user1));
-
-    // On push les EFLAGS avec IF = 1 pour activer les interruptions irq0
-    uint32_t eflags;
-    asm volatile("pushf; pop %0" : "=r"(eflags));
-    eflags |= (1u << 9);
-    asm volatile("push %0" :: "r"(eflags) : "memory");
-
-    //Push CS et EIP
-    asm volatile("push %0" :: "r"(cs_selecteur_ring3_user1));
-    asm volatile("push %0" :: "r"(user1)); // EIP : debut du code user 1 a executer
-    */
-
     // --- Autres actions ---
 
     // changer la pile noyau de la TSS pour la pile noyau user 1
     TSS.s0.esp = (uint32_t)&__kernel_stack_user1_end__; // adresse 0x00c0 1000
     TSS.s0.ss  = gdt_krn_seg_sel(2);
 
+    // Mise a jour de CR3
+    set_cr3(task_user1.cr3);
+
     // Mise a jour de current task
     current_task = &task_user1;
 
-    // Activer irq0
-    //activate_irq0(); // Utilisation du fichier interruption.h
+    // Mise a 0 du compteur
+    *(volatile uint32_t*)VADDR_COUNTER_USER1 = 0;
 
-    debug("\n\n");
-    debug("--- user1=%p user2=%p __user_start__=%p __user_end__=%p\n",
-      user1, user2, &__user_start__, &__user_end__);
-
-    debug("[tp.c] - juste avant asm\n");
-    // Appel du Iret pour appeler le code userland en ring 3 et declencher #GP
-    //asm volatile("iret");
-
+    // Mise de IF a 1 pour reactiver irq0 (equivalent a sti())
     uint32_t eflags;
     asm volatile("pushf; pop %0" : "=r"(eflags));
     eflags |= (1u << 9);   // IF = 1
-    
+
+    // --- Push du contexte ---
+
     asm volatile(
         "pushl %[ss]\n\t"
         "pushl %[uesp]\n\t"

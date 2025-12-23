@@ -47,6 +47,7 @@ void intr_init()
 uint32_t __regparm__(1) intr_hdlr(int_ctx_t *ctx)
 {
 
+   /*
    debug("\nIDT event\n"
          " . int    #%d\n"
          " . error  0x%x\n"
@@ -74,6 +75,7 @@ uint32_t __regparm__(1) intr_hdlr(int_ctx_t *ctx)
          ,ctx->gpr.ebp.raw
          ,ctx->gpr.esi.raw
          ,ctx->gpr.edi.raw);
+   */
 
    uint8_t vector = ctx->nr.blow;
 
@@ -100,7 +102,7 @@ uint32_t __regparm__(1) intr_hdlr(int_ctx_t *ctx)
       // esp de la pile noyau courant
       uint32_t kernel_esp = (uint32_t)ctx;
 
-      debug("Int 32 ! \n");
+      //debug("Int 32 ! \n");
 
       if(cpl == 3){
          //debug("l'interruption a ete declanchee par un user\n");
@@ -108,7 +110,9 @@ uint32_t __regparm__(1) intr_hdlr(int_ctx_t *ctx)
          if (current_task == &task_user1) {
 
             //debug("IRQ sur pile noyau USER1 (kesp=0x%x)\n", kernel_esp);
-            debug("User 1 etait en cours au moment de l'interruption irq0\n");
+
+            // USER INTERROMPU DEBUG
+            //debug("User 1 etait en cours au moment de l'interruption irq0\n");
             
             // On sauvegarde le pointeur de pile kernel de user 1 dans sa struct
             task_user1.kernel_esp = (uint32_t)ctx;
@@ -123,19 +127,19 @@ uint32_t __regparm__(1) intr_hdlr(int_ctx_t *ctx)
             TSS.s0.esp = (uint32_t)&__kernel_stack_user2_end__; // adresse 0x00c0 2000
             TSS.s0.ss  = gdt_krn_seg_sel(3);
 
-            // Debug pour verif
-            debug("SWITCH u1->u2: u2.kesp=0x%x u2.cr3=0x%x TSS.esp0=0x%x\n",
-            task_user2.kernel_esp, task_user2.cr3, TSS.s0.esp);
+            // SWITCH DEBUG
+            //debug("SWITCH user 1 ->user 2 \n");
+            //debug("u2.kesp=0x%x u2.cr3=0x%x TSS.esp0=0x%x\n",task_user2.kernel_esp, task_user2.cr3, TSS.s0.esp);
 
             //On envoit le nouveau esp pile user 2 a idt.s
             return task_user2.kernel_esp;
-
-            
          } 
          else if (current_task == &task_user2) {
 
             //debug("IRQ sur pile noyau USER2 (kesp=0x%x)\n", kernel_esp);
-            debug("User 2 etait en cours au moment de l'interruption irq0\n");
+            
+            // USER INTERROMPU DEBUG
+            //debug("User 2 etait en cours au moment de l'interruption irq0\n");
 
             // On sauvegarde le pointeur de pile kernel de user 1 dans sa struct
             task_user2.kernel_esp = (uint32_t)ctx;
@@ -150,9 +154,12 @@ uint32_t __regparm__(1) intr_hdlr(int_ctx_t *ctx)
             TSS.s0.esp = (uint32_t)&__kernel_stack_user1_end__; // adresse 0x00c0 2000
             TSS.s0.ss  = gdt_krn_seg_sel(2);
 
+            // SWITCH DEBUG
+            //debug("SWITCH user 2 ->user 1 \n");
+
             //On envoit le nouveau esp pile user 1 a idt.s
             return task_user1.kernel_esp;
-         } 
+         }
          else {
             debug("IRQ sur pile noyau inconnue (kesp=0x%x)\n", kernel_esp);
             debug("Erreur lors de la recuperation du user en cours au moment de l'irq0\n");
