@@ -1,8 +1,9 @@
 /* GPLv2 (c) Airbus */
 #include <debug.h>
 #include <segmem.h>
-#include "configuration_files/tss/tss_setup.h"
+#include <string.h>
 
+#include "configuration_files/tss/tss_setup.h"
 #include <configuration_files/segmentation/segmentation_setup.h> // Pour utilisation de my_gdt
 
 tss_t TSS;

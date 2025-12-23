@@ -33,9 +33,9 @@ void print_gdt_content(gdt_reg_t gdtr_ptr) {
     }
 }
 
-void segmentation_setup_gdt(void){
+seg_desc_t my_gdt[11];
 
-    seg_desc_t my_gdt[11];
+void segmentation_setup_gdt(void){
 
     my_gdt[0].raw = 0ULL;
 
@@ -180,9 +180,13 @@ void segmentation_setup_gdt(void){
     gdtr_of_my_gdt.limit = sizeof(my_gdt) - 1;
     
     set_gdtr(gdtr_of_my_gdt); // Update du registre GDTR
+
+    // Affichage du contenu de la GDT
+    print_gdt_content(gdtr_of_my_gdt);
     
     //Mettre a jour les selecteurs de segments
     set_cs(gdt_krn_seg_sel(1));
     set_ds(gdt_krn_seg_sel(9));
+    set_ss(gdt_krn_seg_sel(9));
 
 }

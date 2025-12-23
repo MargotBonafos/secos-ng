@@ -12,6 +12,7 @@
 #include <configuration_files/pagination/paging_setup.h>
 #include <configuration_files/segmentation/segmentation_setup.h>
 #include <configuration_files/tss/tss_setup.h>
+#include <configuration_files/interruption/interruption_setup.h>
 #include <task.h>
 
 extern info_t   *info;
@@ -46,23 +47,31 @@ task_t *current_task = 0;
 // Tache user 1
 void __user__ user1() {
 
-    printf(" Bienvenue user 1\n");
-
+    /*
+    printf("[U1] start\n");
+    while (1) {
+        for (volatile int i = 0; i < 10000000; i++);
+        printf("[U1]\n");
+    }
+    */
     while(1){
-        printf("Je suis user 1\n");
-    }	
-	//asm volatile ("mov %eax, %cr0");
+        asm volatile("nop");
+    }
 }
 
 // Tache user 2
 void __user__ user2() {
 
-    printf(" Bienvenue user 2\n");
-
+    /*
+    printf("[U2] start\n");
+    while (1) {
+        for (volatile int i = 0; i < 10000000; i++);
+        printf("[U2]\n");
+    }
+    */
     while(1){
-        printf("Je suis user 2\n");
-    }	
-	//asm volatile ("mov %eax, %cr0");
+        asm volatile("nop");
+    }
 }
 
 void tp() {
@@ -117,17 +126,11 @@ void tp() {
     printf("taille de la GDT : %hu \n", actual_gdtr.limit);
     printf("addresse de la GDT : %lu  \n", actual_gdtr.addr);
 
-    // Affichage du contenu de la GDT
-    print_gdt_content(actual_gdtr);
-
     // Affichage des selecteurs de segments
-    printf("DS : %hu \n", get_ds());
     printf("CS : %hu \n", get_seg_sel(cs));
 
+    printf("DS : %hu \n", get_ds());
     printf("SS : %hu \n", get_ss());
-    printf("ES : %hu \n", get_es());
-    printf("FS : %hu \n", get_fs());
-    printf("GS : %hu \n", get_gs());
 
 
     /* ---------------  Configuration de la TSS ------------------- */
@@ -135,7 +138,7 @@ void tp() {
     // Utilisation de tss_setup.h
     tss_setup(); // Mise de esp ring0 et ss ring0 dans TSS et mise a jour de TR
 
-    
+
    /* ---------------  Configuration de la pagination ------------------- */
 
    /* -- Configuration des PGD et PTB (Utilisation de paging_setup.h) -- */
@@ -151,14 +154,161 @@ void tp() {
 
     
     /* ---------------  Configuration des interruptions ------------------- */
+    
+    // Cf interruption_setup.c pour voir toutes les actions de configuration
+    interruption_setup(1); // Fixe a 50 interruptions irq0 / seconde
+
+
+    /* ---------------  Preparer la frame d'interruption de user 2 ------------------- */
+    /* Necessaire pour le premier switch de contexte de intr_hdlr */
+    
+    /*** Creation des selecteurs de segments ***/
+
+    // --- Creation du SS ring3 USER 2 ---
+    seg_sel_t ss_ring3_user2;
+
+    //segment dans la GDT
+    ss_ring3_user2.index = 7;
+    ss_ring3_user2.ti = 0;
+    ss_ring3_user2.rpl = 3;
+
+    uint16_t ss_selecteur_ring3_user2 = (ss_ring3_user2.index << 3) | (ss_ring3_user2.ti << 2) | (ss_ring3_user2.rpl);
+
+    // --- Creation de ESP ---
+    uint32_t esp_ring3_user2 = (uint32_t)user2_stack + sizeof(user2_stack);
+
+    // --- Creation du CS ring3 ---
+    seg_sel_t cs_ring3_user2;
+
+    cs_ring3_user2.index = 6; //segment dans la GDT
+    cs_ring3_user2.ti = 0;
+    cs_ring3_user2.rpl = 3;
+
+    uint16_t cs_selecteur_ring3_user2 = (cs_ring3_user2.index << 3) | (cs_ring3_user2.ti << 2) | (cs_ring3_user2.rpl);
+
+
+    /*** Creation d'un int_ctx_t ***/
+
+    // On recupere le esp de la pile noyeau user 2
+    uint32_t *sp = (uint32_t*)&__kernel_stack_user2_end__;
+
+    // On Reserver la place de int_ctx_t sur la pile noyau
+    sp = (uint32_t *)((uint8_t*)sp - sizeof(int_ctx_t));
+
+    int_ctx_t *frame = (int_ctx_t*)sp;
+
+    // Push des registres generaux (pour que le popa fonctionne)
+    frame->gpr.eax.raw = 0;
+    frame->gpr.ecx.raw = 0;
+    frame->gpr.edx.raw = 0;
+    frame->gpr.ebx.raw = 0;
+    frame->gpr.esp.raw = 0;
+    frame->gpr.ebp.raw = 0;
+    frame->gpr.esi.raw = 0;
+    frame->gpr.edi.raw = 0;
+
+    // Champs CPU [ ajoute par le stub d'habitude (nr, err)]
+    frame->nr.raw  = 32;      // comme si ça venait de IRQ0
+    frame->err.raw = 0;
+
+    frame->eip.raw = (uint32_t)user2;
+    frame->cs.raw  = cs_selecteur_ring3_user2;
+    frame->eflags.raw = EFLAGS_IF; // assure IF=1
+
+    frame->esp.raw = esp_ring3_user2;
+    frame->ss.raw  = ss_selecteur_ring3_user2;
+
+    // Mise a jour de kernel_esp de la structure afin qu'il soit correctement 
+    // Utilise dans intr_hdlr au moment du switch    
+    task_user2.kernel_esp = (uint32_t)frame;
 
 
     /* ---------------  Initialisation en mode user1 ------------------- */
 
     current_task = &task_user1;
 
+    /* Mise en place du contexte de user 1 sur la pile noyeau pour qu'au moment du iret,
+       on passe dans le code user1 */
+
+    // --- Creation du SS ring3 User 1 ---
+    seg_sel_t ss_ring3_user1;
+
+    //segment dans la GDT
+    ss_ring3_user1.index = 5;
+    ss_ring3_user1.ti = 0;
+    ss_ring3_user1.rpl = 3;
+
+    uint16_t ss_selecteur_ring3_user1 = (ss_ring3_user1.index << 3) | (ss_ring3_user1.ti << 2) | (ss_ring3_user1.rpl);
+
+    // --- Creation de ESP User 1 ---
+    uint32_t esp_ring3_user1 = (uint32_t)user1_stack + sizeof(user1_stack);
+
+    // --- Creation du CS ring3 User 1 ---
+    seg_sel_t cs_ring3_user1;
+
+    cs_ring3_user1.index = 4; //segment dans la GDT
+    cs_ring3_user1.ti = 0;
+    cs_ring3_user1.rpl = 3;
+
+    uint16_t cs_selecteur_ring3_user1 = (cs_ring3_user1.index << 3) | (cs_ring3_user1.ti << 2) | (cs_ring3_user1.rpl);
+
+    // --- Push du contexte ---
+
+    /*
+    // Push de SS et ESP
+    asm volatile("push %0" :: "r"((uint32_t)ss_selecteur_ring3_user1));
+    asm volatile("push %0" :: "r"(esp_ring3_user1));
+
+    // On push les EFLAGS avec IF = 1 pour activer les interruptions irq0
+    uint32_t eflags;
+    asm volatile("pushf; pop %0" : "=r"(eflags));
+    eflags |= (1u << 9);
+    asm volatile("push %0" :: "r"(eflags) : "memory");
+
+    //Push CS et EIP
+    asm volatile("push %0" :: "r"(cs_selecteur_ring3_user1));
+    asm volatile("push %0" :: "r"(user1)); // EIP : debut du code user 1 a executer
+    */
+
+    // --- Autres actions ---
+
     // changer la pile noyau de la TSS pour la pile noyau user 1
-    TSS.s0.esp = __kernel_stack_user1_end__; // adresse 0x00c0 1000
+    TSS.s0.esp = (uint32_t)&__kernel_stack_user1_end__; // adresse 0x00c0 1000
     TSS.s0.ss  = gdt_krn_seg_sel(2);
+
+    // Mise a jour de current task
+    current_task = &task_user1;
+
+    // Activer irq0
+    //activate_irq0(); // Utilisation du fichier interruption.h
+
+    debug("\n\n");
+    debug("--- user1=%p user2=%p __user_start__=%p __user_end__=%p\n",
+      user1, user2, &__user_start__, &__user_end__);
+
+    debug("[tp.c] - juste avant asm\n");
+    // Appel du Iret pour appeler le code userland en ring 3 et declencher #GP
+    //asm volatile("iret");
+
+    uint32_t eflags;
+    asm volatile("pushf; pop %0" : "=r"(eflags));
+    eflags |= (1u << 9);   // IF = 1
+    
+    asm volatile(
+        "pushl %[ss]\n\t"
+        "pushl %[uesp]\n\t"
+        "pushl %[efl]\n\t"
+        "pushl %[cs]\n\t"
+        "pushl %[eip]\n\t"
+        "iret\n\t"
+        :
+        : [ss]   "r"((uint32_t)ss_selecteur_ring3_user1),
+        [uesp] "r"(esp_ring3_user1),
+        [efl]  "r"(eflags),
+        [cs]   "r"((uint32_t)cs_selecteur_ring3_user1),
+        [eip]  "r"((uint32_t)user1)
+        : "memory"
+    );
+    
 
 }

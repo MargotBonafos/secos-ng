@@ -2,7 +2,6 @@
 #include <cr.h>
 #include <pagemem.h>
 #include <string.h>
-#include <stdint.h>
 #include "paging_setup.h"
 
 extern uint32_t __kernel_start__, __kernel_end__;
@@ -11,7 +10,6 @@ extern uint32_t __user2_stack_base__, __user2_stack_end__;
 extern uint32_t __shared_base__, __shared_end__;
 extern uint32_t __kernel_stack_user1_base__, __kernel_stack_user1_end__;
 extern uint32_t __kernel_stack_user2_base__, __kernel_stack_user2_end__;
-
 
 #define USER2_SHARED_VA     ((void*)0x03a0c000u)   /* PDE=13, PTE=524 */
 
@@ -99,9 +97,5 @@ void paging_setup_user2(void)
 
 
     /* Affichage pour verif */
-    debug("[paging] user2: PGD=%p shared_va=%p pdi=%d pti=%d\n",
-          pgd_user2,
-          USER2_SHARED_VA,
-          pd32_get_idx(USER2_SHARED_VA),
-          pt32_get_idx(USER2_SHARED_VA));
+    debug("[paging] user2: PGD=%p shared_va=%p", pgd_user2,USER2_SHARED_VA);
 }

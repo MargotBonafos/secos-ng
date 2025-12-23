@@ -3,7 +3,6 @@
 #include <cr.h>
 #include <pagemem.h>
 #include <string.h>
-#include <stdint.h>
 #include "paging_setup.h"
 
 extern uint32_t __kernel_start__, __kernel_end__;

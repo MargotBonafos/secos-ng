@@ -3,7 +3,6 @@
 #include <cr.h>
 #include <pagemem.h>
 #include <string.h>
-#include <stdint.h>
 #include "paging_setup.h"
 
 // Adresses des tables paging noyau (choisis une zone différente de user1/user2)
@@ -43,7 +42,7 @@ void paging_setup_kernel(void)
     ptb_clear(ptb3_kernel);
 
     /*  --- PDE 0 : 0..4MB (identity & supervisor) --- */
-    map_ptb_identity(ptb0, 0, PG_KRN | PG_RW);
+    map_ptb_identity(ptb0_kernel, 0, PG_KRN | PG_RW);
     pg_set_entry(&pgd_kernel[0], PG_KRN | PG_RW, page_get_nr(ptb0_kernel));
 
 

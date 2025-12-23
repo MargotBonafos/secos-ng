@@ -4,9 +4,10 @@
 #include <info.h>
 #include <segmem.h>
 #include <grub_mbi.h>
+#include <cr.h>
 
-#include <task.h>
-#include <configuration_files/tss/tss_setup.h>
+#include <../../tp_exam/task.h>
+#include <../../tp_exam/configuration_files/tss/tss_setup.h>
 
 extern uint32_t __kernel_stack_user1_base__, __kernel_stack_user1_end__;
 extern uint32_t __kernel_stack_user2_base__, __kernel_stack_user2_end__;
@@ -96,14 +97,14 @@ uint32_t __regparm__(1) intr_hdlr(int_ctx_t *ctx)
       // esp de la pile noyau courant
       uint32_t kernel_esp = (uint32_t)ctx;
 
-      debug("interruption 32 \n");
+      debug("Int 32 ! \n");
 
       if(cpl == 3){
-         debug("l'interruption a ete declanchee par un user");
+         //debug("l'interruption a ete declanchee par un user\n");
 
          if (current_task == &task_user1) {
 
-            debug("IRQ sur pile noyau USER1 (kesp=0x%x)\n", kernel_esp);
+            //debug("IRQ sur pile noyau USER1 (kesp=0x%x)\n", kernel_esp);
             debug("User 1 etait en cours au moment de l'interruption irq0\n");
             
             // On sauvegarde le pointeur de pile kernel de user 1 dans sa struct
@@ -120,13 +121,13 @@ uint32_t __regparm__(1) intr_hdlr(int_ctx_t *ctx)
             TSS.s0.ss  = gdt_krn_seg_sel(3);
 
             //On envoit le nouveau esp pile user 2 a idt.s
-            return &task_user2.kernel_esp;
+            return task_user2.kernel_esp;
 
             
          } 
          else if (current_task == &task_user2) {
 
-            debug("IRQ sur pile noyau USER2 (kesp=0x%x)\n", kernel_esp);
+            //debug("IRQ sur pile noyau USER2 (kesp=0x%x)\n", kernel_esp);
             debug("User 2 etait en cours au moment de l'interruption irq0\n");
 
             // On sauvegarde le pointeur de pile kernel de user 1 dans sa struct
@@ -143,17 +144,19 @@ uint32_t __regparm__(1) intr_hdlr(int_ctx_t *ctx)
             TSS.s0.ss  = gdt_krn_seg_sel(2);
 
             //On envoit le nouveau esp pile user 1 a idt.s
-            return &task_user1.kernel_esp;
+            return task_user1.kernel_esp;
          } 
          else {
             debug("IRQ sur pile noyau inconnue (kesp=0x%x)\n", kernel_esp);
-            debug("Erreur lors de la recuperation du user en cours au moment de l'irq0");
+            debug("Erreur lors de la recuperation du user en cours au moment de l'irq0\n");
          }
 
       }else{
-         debug("l'interruption a ete declanchee par le noyau");
+         debug("[intr.c] - l'interruption a ete declanchee par le noyau\n");
       }
    }else{
-      debug("l'interruption declanchee n'est pas l'interruption 32\n");
+      debug("[intr.c] - l'interruption declanchee n'est pas l'interruption 32\n");
    }
+   // IRQ depuis ring0 : pas de switch
+   return (uint32_t)ctx;
 }
